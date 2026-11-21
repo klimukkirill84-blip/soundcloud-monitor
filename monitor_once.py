@@ -4,7 +4,6 @@ import re
 import asyncio
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urlparse
 
 import aiohttp
 
@@ -12,6 +11,22 @@ BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "8835091053")
 PROFILE_URL = os.environ.get("SOUNDCLOUD_PROFILE_URL", "https://soundcloud.com/skellx")
 STATE = Path("state.json")
+
+FIELDS = (
+    "id", "username", "full_name", "permalink_url", "description", "city", "country",
+    "website", "created_at", "last_modified", "online",
+    "followers_count", "followings_count", "track_count", "playlist_count",
+    "public_favorites_count", "avatar_url",
+)
+LABELS = {
+    "username": "Ник", "full_name": "Имя", "description": "Описание",
+    "city": "Город", "country": "Страна", "website": "Сайт",
+    "created_at": "Дата создания", "last_modified": "Последнее изменение профиля",
+    "online": "Онлайн", "followers_count": "Подписчики",
+    "followings_count": "Подписки", "track_count": "Треки",
+    "playlist_count": "Плейлисты", "public_favorites_count": "Публичные лайки",
+    "avatar_url": "Аватар",
+}
 
 
 class MetaParser(HTMLParser):
@@ -29,8 +44,7 @@ class MetaParser(HTMLParser):
 
 
 def extract_profile(page):
-    # SoundCloud embeds public profile data in its server-rendered hydration JSON.
-    match = re.search(r"window\.__sc_hydration\s*=\s*(\[.*?\])\s*;", page, re.S)
+    match = re.search(r"window\\.__sc_hydration\\s*=\\s*(\\[.*?\\])\\s*;", page, re.S)
     if match:
         try:
             hydration = json.loads(match.group(1))
@@ -46,7 +60,6 @@ def extract_profile(page):
         except (json.JSONDecodeError, TypeError):
             pass
 
-    # Safe fallback: public Open Graph metadata (counts may not be available).
     parser = MetaParser()
     parser.feed(page)
     meta = parser.meta
@@ -61,11 +74,19 @@ def extract_profile(page):
     }
 
 
+def display_value(key, value):
+    if key == "online":
+        return "Да" if value else "Нет"
+    if key == "avatar_url":
+        return "изменён"
+    return str(value)
+
+
 async def send_message(session, message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     async with session.post(url, json={
         "chat_id": CHAT_ID,
-        "text": message,
+        "text": message[:4000],
         "disable_web_page_preview": True,
     }) as response:
         body = await response.text()
@@ -87,45 +108,45 @@ async def main():
             page = await response.text()
 
         profile = extract_profile(page)
-        fields = (
-            "id", "username", "permalink_url", "description", "city", "country",
-            "followers_count", "followings_count", "track_count", "playlist_count",
-            "public_favorites_count", "avatar_url",
-        )
-        current = {key: profile[key] for key in fields if key in profile}
+        current = {key: profile[key] for key in FIELDS if key in profile and profile[key] is not None}
         if not current.get("username") and not current.get("id"):
             raise RuntimeError("Публичная страница не содержит данных профиля; состояние не изменено")
 
         old = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else None
-        labels = {
-            "username": "Имя профиля", "description": "Описание", "city": "Город",
-            "country": "Страна", "followers_count": "Подписчики",
-            "followings_count": "Подписки", "track_count": "Треки",
-            "playlist_count": "Плейлисты", "public_favorites_count": "Публичные лайки",
-            "avatar_url": "Аватар",
-        }
+        profile_link = current.get("permalink_url", PROFILE_URL)
 
         if old is None:
-            message = "Монитор SoundCloud запущен.\nПрофиль: " + current.get("permalink_url", PROFILE_URL)
+            lines = ["Монитор SoundCloud запущен", "Публичная информация профиля:"]
+            for key, label in LABELS.items():
+                if key in current and key != "avatar_url":
+                    value = current[key]
+                    if value != "":
+                        lines.append(f"• {label}: {display_value(key, value)}")
+            if current.get("avatar_url"):
+                lines.append("• Аватар: доступен")
+            lines.append(f"Профиль: {profile_link}")
+            message = "\\n".join(lines)
         else:
             changes = []
-            for key, label in labels.items():
-                if key in old and key in current and old[key] != current[key]:
-                    before, after = old[key], current[key]
-                    if key == "avatar_url":
-                        before, after = "изменён", "изменён"
-                    changes.append(f"{label}: {before} → {after}")
+            for key, label in LABELS.items():
+                before_present = key in old
+                after_present = key in current
+                if before_present and after_present and old[key] != current[key]:
+                    changes.append(f"• {label}: {display_value(key, old[key])} → {display_value(key, current[key])}")
+                elif before_present != after_present:
+                    value = display_value(key, current[key]) if after_present else "больше не отображается"
+                    changes.append(f"• {label}: {value}")
             message = (
-                "Изменения в SoundCloud профиле:\n"
-                + "\n".join("• " + change for change in changes)
-                + "\n\n" + current.get("permalink_url", PROFILE_URL)
+                "Обнаружены изменения в SoundCloud профиле:\\n"
+                + "\\n".join(changes)
+                + f"\\n\\nПрофиль: {profile_link}"
             ) if changes else None
 
-        # Only save a complete successful response, never an error/empty page.
-        STATE.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+        # Send first; only update the baseline after Telegram confirms delivery.
         if message:
             await send_message(session, message)
-        print("Проверка завершена; изменения:", bool(message and old is not None))
+        STATE.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+        print("Проверка завершена; найдено изменений:", bool(message and old is not None))
 
 
 if __name__ == "__main__":
