@@ -145,9 +145,9 @@ async def main():
                     value = display_value(key, current[key]) if after_present else "больше не отображается"
                     changes.append(f"• {label}: {value}")
             message = (
-                "Обнаружены изменения в SoundCloud профиле:\\n"
+                "Обнаружены изменения в SoundCloud профиле:\n"
                 + "\n".join(changes)
-                + f"\\n\\nПрофиль: {profile_link}"
+                + f"\n\nПрофиль: {profile_link}"
             ) if changes else None
 
         # Send first; only update the baseline after Telegram confirms delivery.
