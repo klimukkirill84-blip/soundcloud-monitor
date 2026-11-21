@@ -34,5 +34,6 @@ jobs:
           git add state.json
           if ! git diff --cached --quiet; then
             git commit -m "Update SoundCloud monitor state"
+            git pull --rebase origin main
             git push
           fi
