@@ -1,5 +1,9 @@
 name: SoundCloud monitor
 on:
+  push:
+    paths:
+      - "monitor_once.py"
+      - ".github/workflows/monitor.yml"
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
