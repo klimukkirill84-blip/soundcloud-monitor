@@ -44,7 +44,7 @@ class MetaParser(HTMLParser):
 
 
 def extract_profile(page):
-    match = re.search(r"window\\.__sc_hydration\\s*=\\s*(\\[.*?\\])\\s*;", page, re.S)
+    match = re.search(r"window\.__sc_hydration\s*=\s*(\[.*?\])\s*;", page, re.S)
     if match:
         try:
             hydration = json.loads(match.group(1))
@@ -125,7 +125,7 @@ async def main():
             if current.get("avatar_url"):
                 lines.append("• Аватар: доступен")
             lines.append(f"Профиль: {profile_link}")
-            message = "\\n".join(lines)
+            message = "\n".join(lines)
         else:
             changes = []
             for key, label in LABELS.items():
@@ -138,7 +138,7 @@ async def main():
                     changes.append(f"• {label}: {value}")
             message = (
                 "Обнаружены изменения в SoundCloud профиле:\\n"
-                + "\\n".join(changes)
+                + "\n".join(changes)
                 + f"\\n\\nПрофиль: {profile_link}"
             ) if changes else None
 
