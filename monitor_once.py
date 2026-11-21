@@ -115,6 +115,14 @@ async def main():
         old = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else None
         profile_link = current.get("permalink_url", PROFILE_URL)
 
+        # A different SoundCloud account starts a fresh baseline, not a change report.
+        if old is not None:
+            old_id, new_id = old.get("id"), current.get("id")
+            old_url = (old.get("permalink_url") or "").rstrip("/").lower()
+            new_url = (current.get("permalink_url") or PROFILE_URL).rstrip("/").lower()
+            if (old_id is not None and new_id is not None and old_id != new_id) or (old_url and new_url and old_url != new_url):
+                old = None
+
         if old is None:
             lines = ["Монитор SoundCloud запущен", "Публичная информация профиля:"]
             for key, label in LABELS.items():
