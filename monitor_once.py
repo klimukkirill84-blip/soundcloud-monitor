@@ -30,7 +30,7 @@ class MetaParser(HTMLParser):
 
 def extract_profile(page):
     # SoundCloud embeds public profile data in its server-rendered hydration JSON.
-    match = re.search(r"window\\.__sc_hydration\\s*=\\s*(\\[.*?\\])\\s*;", page, re.S)
+    match = re.search(r"window\.__sc_hydration\s*=\s*(\[.*?\])\s*;", page, re.S)
     if match:
         try:
             hydration = json.loads(match.group(1))
